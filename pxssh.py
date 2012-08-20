@@ -137,7 +137,8 @@ class pxssh (spawn):
         # If latency is worse than these values then this will fail.
 
         try:
-            self.read_nonblocking(size=10000,timeout=1) # GAS: Clear out the cache before getting the prompt
+            # Clear the buffer before getting the prompt.
+            self.read_nonblocking(size=10000,timeout=1)
         except TIMEOUT:
             pass
         time.sleep(0.1)
