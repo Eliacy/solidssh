@@ -84,7 +84,7 @@ try:
     import errno
     import traceback
     import signal
-except ImportError, e:
+except ImportError as e:
     raise ImportError(str(e) + """
 
 A critical module was not found. Probably this operating system does not
@@ -235,39 +235,39 @@ def run(command, timeout=-1, withexitstatus=False, events=None,
         child = spawn(command, timeout=timeout, maxread=2000, logfile=logfile,
                 cwd=cwd, env=env)
     if events is not None:
-        patterns = events.keys()
-        responses = events.values()
+        patterns = list(events.keys())
+        responses = list(events.values())
     else:
         # This assumes EOF or TIMEOUT will eventually cause run to terminate.
         patterns = None
         responses = None
     child_result_list = []
     event_count = 0
-    while 1:
+    while True:
         try:
             index = child.expect(patterns)
-            if type(child.after) in types.StringTypes:
+            if type(child.after) in str:
                 child_result_list.append(child.before + child.after)
             else:
                 # child.after may have been a TIMEOUT or EOF,
                 # which we don't want appended to the list.
                 child_result_list.append(child.before)
-            if type(responses[index]) in types.StringTypes:
+            if type(responses[index]) in str:
                 child.send(responses[index])
-            elif type(responses[index]) is types.FunctionType:
+            elif isinstance(responses[index], types.FunctionType):
                 callback_result = responses[index](locals())
                 sys.stdout.flush()
-                if type(callback_result) in types.StringTypes:
+                if type(callback_result) in str:
                     child.send(callback_result)
                 elif callback_result:
                     break
             else:
                 raise TypeError('The callback must be a string or function.')
             event_count = event_count + 1
-        except TIMEOUT, e:
+        except TIMEOUT as e:
             child_result_list.append(child.before)
             break
-        except EOF, e:
+        except EOF as e:
             child_result_list.append(child.before)
             break
     child_result = ''.join(child_result_list)
@@ -530,13 +530,13 @@ class spawn(object):
         # that performs some task; creates no stdout output; and then dies.
 
         # If command is an int type then it may represent a file descriptor.
-        if type(command) == type(0):
+        if isinstance(command, type(0)):
             raise ExceptionPexpect('Command is an int type. ' +
                     'If this is a file descriptor then maybe you want to ' +
                     'use fdpexpect.fdspawn which takes an existing ' +
                     'file descriptor instead of a command string.')
 
-        if type(args) != type([]):
+        if not isinstance(args, type([])):
             raise TypeError('The argument, args, must be a list.')
 
         if args == []:
@@ -563,7 +563,7 @@ class spawn(object):
         if self.use_native_pty_fork:
             try:
                 self.pid, self.child_fd = pty.fork()
-            except OSError, e:
+            except OSError as e:
                 raise ExceptionPexpect('pty.fork() failed: ' + str(e))
         else:
             # Use internal __fork_pty
@@ -877,7 +877,7 @@ class spawn(object):
         if self.child_fd in r:
             try:
                 s = os.read(self.child_fd, size)
-            except OSError, e:
+            except OSError as e:
                 # Linux does this
                 self.flag_eof = True
                 raise EOF('End Of File (EOF). Exception style platform.')
@@ -954,7 +954,7 @@ class spawn(object):
 
         return self
 
-    def next(self):
+    def __next__(self):
 
         """This is to support iterators over a file-like object.
         """
@@ -1128,7 +1128,7 @@ class spawn(object):
                 else:
                     return False
             return False
-        except OSError, e:
+        except OSError as e:
             # I think there are kernel timing issues that sometimes cause
             # this to happen. I think isalive() reports True, but the
             # process is dead to the kernel.
@@ -1191,7 +1191,7 @@ class spawn(object):
 
         try:
             pid, status = os.waitpid(self.pid, waitpid_options)
-        except OSError, e:
+        except OSError as e:
             # No child processes
             if e[0] == errno.ECHILD:
                 raise ExceptionPexpect('isalive() encountered condition ' +
@@ -1209,7 +1209,7 @@ class spawn(object):
             try:
                 ### os.WNOHANG) # Solaris!
                 pid, status = os.waitpid(self.pid, waitpid_options)
-            except OSError, e:
+            except OSError as e:
                 # This should never happen...
                 if e[0] == errno.ECHILD:
                     raise ExceptionPexpect('isalive() encountered condition ' +
@@ -1284,7 +1284,7 @@ class spawn(object):
 
         if patterns is None:
             return []
-        if type(patterns) is not types.ListType:
+        if not isinstance(patterns, list):
             patterns = [patterns]
 
         # Allow dot to match \n
@@ -1293,13 +1293,13 @@ class spawn(object):
             compile_flags = compile_flags | re.IGNORECASE
         compiled_pattern_list = []
         for p in patterns:
-            if type(p) in types.StringTypes:
+            if type(p) in str:
                 compiled_pattern_list.append(re.compile(p, compile_flags))
             elif p is EOF:
                 compiled_pattern_list.append(EOF)
             elif p is TIMEOUT:
                 compiled_pattern_list.append(TIMEOUT)
-            elif type(p) is type(re.compile('')):
+            elif isinstance(p, type(re.compile(''))):
                 compiled_pattern_list.append(p)
             else:
                 raise TypeError('Argument must be one of StringTypes, ' +
@@ -1418,7 +1418,7 @@ class spawn(object):
         This method is also useful when you don't want to have to worry about
         escaping regular expression characters that you want to match."""
 
-        if type(pattern_list) in types.StringTypes or \
+        if type(pattern_list) in str or \
             pattern_list in (TIMEOUT, EOF):
             pattern_list = [pattern_list]
         return self.expect_loop(searcher_string(pattern_list),
@@ -1464,7 +1464,7 @@ class spawn(object):
                 incoming = incoming + c
                 if timeout is not None:
                     timeout = end_time - time.time()
-        except EOF, e:
+        except EOF as e:
             self.buffer = ''
             self.before = incoming
             self.after = EOF
@@ -1477,7 +1477,7 @@ class spawn(object):
                 self.match = None
                 self.match_index = None
                 raise EOF(str(e) + '\n' + str(self))
-        except TIMEOUT, e:
+        except TIMEOUT as e:
             self.buffer = incoming
             self.before = incoming
             self.after = TIMEOUT
@@ -1502,7 +1502,7 @@ class spawn(object):
         """This returns the terminal window size of the child tty. The return
         value is a tuple of (rows, cols). """
 
-        TIOCGWINSZ = getattr(termios, 'TIOCGWINSZ', 1074295912L)
+        TIOCGWINSZ = getattr(termios, 'TIOCGWINSZ', 1074295912)
         s = struct.pack('HHHH', 0, 0, 0, 0)
         x = fcntl.ioctl(self.fileno(), TIOCGWINSZ, s)
         return struct.unpack('HHHH', x)[0:2]
@@ -1524,7 +1524,7 @@ class spawn(object):
         # Newer versions of Linux have totally different values for TIOCSWINSZ.
         # Note that this fix is a hack.
         TIOCSWINSZ = getattr(termios, 'TIOCSWINSZ', -2146929561)
-        if TIOCSWINSZ == 2148037735L:
+        if TIOCSWINSZ == 2148037735:
             # Same bits, but with sign.
             TIOCSWINSZ = -2146929561
         # Note, assume ws_xpixel and ws_ypixel are zero.
@@ -1637,7 +1637,7 @@ class spawn(object):
         while True:
             try:
                 return select.select(iwtd, owtd, ewtd, timeout)
-            except select.error, e:
+            except select.error as e:
                 if e[0] == errno.EINTR:
                     # if we loop back we have to subtract the
                     # amount of time we already waited.
@@ -1704,7 +1704,7 @@ class searcher_string(object):
         self.eof_index = -1
         self.timeout_index = -1
         self._strings = []
-        for n, s in zip(range(len(strings)), strings):
+        for n, s in zip(list(range(len(strings))), strings):
             if s is EOF:
                 self.eof_index = n
                 continue
@@ -1805,7 +1805,7 @@ class searcher_re(object):
         self.eof_index = -1
         self.timeout_index = -1
         self._searches = []
-        for n, s in zip(range(len(patterns)), patterns):
+        for n, s in zip(list(range(len(patterns))), patterns):
             if s is EOF:
                 self.eof_index = n
                 continue
@@ -1873,26 +1873,19 @@ def which(filename):
     then checks if it is executable. This returns the full path to the filename
     if found and executable. Otherwise this returns None."""
 
-    # Special case where filename already contains a path.
+    # Special case where filename contains an explicit path.
     if os.path.dirname(filename) != '':
         if os.access(filename, os.X_OK):
             return filename
-
-    #if not os.environ.has_key('PATH') or os.environ['PATH'] == '':
-    if not 'PATH' in os.environ or os.environ['PATH'] == '':
+    if 'PATH' not in os.environ or os.environ['PATH'] == '':
         p = os.defpath
     else:
         p = os.environ['PATH']
-
-    # Oddly enough this was the one line that made Pexpect
-    # incompatible with Python 1.5.2.
-    #pathlist = p.split(os.pathsep)
     pathlist = string.split(p, os.pathsep)
-
     for path in pathlist:
-        f = os.path.join(path, filename)
-        if os.access(f, os.X_OK):
-            return f
+        ff = os.path.join(path, filename)
+        if os.access(ff, os.X_OK):
+            return ff
     return None
 
 
