@@ -12,7 +12,7 @@ Example:
 
     $ hive.py --sameuser --samepass host1.example.com host2.example.net
     username: myusername
-    password: 
+    password:
     connecting to host1.example.com - OK
     connecting to host2.example.net - OK
     targetting hosts: 192.168.1.104 192.168.1.107
@@ -85,7 +85,7 @@ CMD_HELP="""Hive commands are preceded by a colon : (just think of vi).
 
 :target all
 
-    reset list of hosts to target all hosts in the hive. 
+    reset list of hosts to target all hosts in the hive.
 
 :to name command
 
@@ -160,7 +160,7 @@ def login (args, cli_username=None, cli_password=None):
         port     = hcd['port']
         if port == '':
             port = None
-        if len(hcd['username']) > 0: 
+        if len(hcd['username']) > 0:
             username = hcd['username']
         elif cli_username is not None:
             username = cli_username
@@ -204,7 +204,7 @@ def main ():
         cli_password = getpass.getpass('password: ')
     else:
         cli_password = None
-   
+
     host_names, hive = login(args, cli_username, cli_password)
 
     synchronous_mode = True
@@ -366,7 +366,7 @@ def main ():
                     print str(e)
                     hive[hostname] = None
             print '=============================================================================='
-    
+
 def refresh (hive, hive_names, timeout=0.5):
 
     """This waits for the TIMEOUT on each host.
@@ -374,7 +374,8 @@ def refresh (hive, hive_names, timeout=0.5):
 
     # TODO This is ideal for threading.
     for hostname in hive_names:
-        hive[hostname].expect([pexpect.TIMEOUT,pexpect.EOF],timeout=timeout)
+        if hive[hostname] is not None:
+            hive[hostname].expect([pexpect.TIMEOUT,pexpect.EOF],timeout=timeout)
 
 def resync (hive, hive_names, timeout=2, max_attempts=5):
 
@@ -389,9 +390,10 @@ def resync (hive, hive_names, timeout=2, max_attempts=5):
 
     # TODO This is ideal for threading.
     for hostname in hive_names:
-        for attempts in xrange(0, max_attempts):
-            if not hive[hostname].prompt(timeout=timeout):
-                break
+        if hive[hostname] is not None:
+            for attempts in xrange(0, max_attempts):
+                if not hive[hostname].prompt(timeout=timeout):
+                    break
 
 def parse_host_connect_string (hcs):
 
