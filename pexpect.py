@@ -42,29 +42,25 @@ Chazarain, Andrew Ryan, Nick Craig-Wood, Andrew Stone, Jorgen Grahn, John
 Spiegel, Jan Grant, and Shane Kerr. Let me know if I forgot anyone.
 
 Pexpect is free, open source, and all that good stuff.
-
-Permission is hereby granted, free of charge, to any person obtaining a copy of
-this software and associated documentation files (the "Software"), to deal in
-the Software without restriction, including without limitation the rights to
-use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
-of the Software, and to permit persons to whom the Software is furnished to do
-so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
-Pexpect Copyright (c) 2010 Noah Spurrier
 http://pexpect.sourceforge.net/
 
-$Id$
+PEXPECT LICENSE
+
+    This license is approved by the OSI and FSF as GPL-compatible.
+        http://opensource.org/licenses/isc-license.txt
+
+    Copyright (c) 2012, Noah Spurrier <noah@noah.org>
+    PERMISSION TO USE, COPY, MODIFY, AND/OR DISTRIBUTE THIS SOFTWARE FOR ANY
+    PURPOSE WITH OR WITHOUT FEE IS HEREBY GRANTED, PROVIDED THAT THE ABOVE
+    COPYRIGHT NOTICE AND THIS PERMISSION NOTICE APPEAR IN ALL COPIES.
+    THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+    WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+    MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+    ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+    WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+    ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+    OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
 """
 
 try:
@@ -91,7 +87,7 @@ A critical module was not found. Probably this operating system does not
 support it. Pexpect is intended for UNIX-like operating systems.""")
 
 __version__ = '2.6'
-__revision__ = '$Revision$'
+__revision__ = '1'
 __all__ = ['ExceptionPexpect', 'EOF', 'TIMEOUT', 'spawn', 'run', 'which',
     'split_command_line', '__version__', '__revision__']
 
@@ -246,18 +242,18 @@ def run(command, timeout=-1, withexitstatus=False, events=None,
     while True:
         try:
             index = child.expect(patterns)
-            if type(child.after) in str:
+            if type(child.after) in types.StringTypes:
                 child_result_list.append(child.before + child.after)
             else:
                 # child.after may have been a TIMEOUT or EOF,
                 # which we don't want appended to the list.
                 child_result_list.append(child.before)
-            if type(responses[index]) in str:
+            if type(responses[index]) in types.StringTypes:
                 child.send(responses[index])
             elif isinstance(responses[index], types.FunctionType):
                 callback_result = responses[index](locals())
                 sys.stdout.flush()
-                if type(callback_result) in str:
+                if type(callback_result) in types.StringTypes:
                     child.send(callback_result)
                 elif callback_result:
                     break
@@ -1293,7 +1289,7 @@ class spawn(object):
             compile_flags = compile_flags | re.IGNORECASE
         compiled_pattern_list = []
         for p in patterns:
-            if type(p) in str:
+            if type(p) in types.StringTypes:
                 compiled_pattern_list.append(re.compile(p, compile_flags))
             elif p is EOF:
                 compiled_pattern_list.append(EOF)
@@ -1418,8 +1414,8 @@ class spawn(object):
         This method is also useful when you don't want to have to worry about
         escaping regular expression characters that you want to match."""
 
-        if type(pattern_list) in str or \
-            pattern_list in (TIMEOUT, EOF):
+        if (type(pattern_list) in types.StringTypes or
+            pattern_list in (TIMEOUT, EOF)):
             pattern_list = [pattern_list]
         return self.expect_loop(searcher_string(pattern_list),
                 timeout, searchwindowsize)
@@ -1507,7 +1503,7 @@ class spawn(object):
         x = fcntl.ioctl(self.fileno(), TIOCGWINSZ, s)
         return struct.unpack('HHHH', x)[0:2]
 
-    def setwinsize(self, r, c):
+    def setwinsize(self, rows, cols):
 
         """This sets the terminal window size of the child tty. This will cause
         a SIGWINCH signal to be sent to the child. This does not change the
@@ -1528,7 +1524,7 @@ class spawn(object):
             # Same bits, but with sign.
             TIOCSWINSZ = -2146929561
         # Note, assume ws_xpixel and ws_ypixel are zero.
-        s = struct.pack('HHHH', r, c, 0, 0)
+        s = struct.pack('HHHH', rows, cols, 0, 0)
         fcntl.ioctl(self.fileno(), TIOCSWINSZ, s)
 
     def interact(self, escape_character=chr(29),

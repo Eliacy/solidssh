@@ -41,9 +41,23 @@ Example:
 
         ./topip.py
 
-Noah Spurrier
+PEXPECT LICENSE
 
-$Id$
+    This license is approved by the OSI and FSF as GPL-compatible.
+        http://opensource.org/licenses/isc-license.txt
+
+    Copyright (c) 2012, Noah Spurrier <noah@noah.org>
+    PERMISSION TO USE, COPY, MODIFY, AND/OR DISTRIBUTE THIS SOFTWARE FOR ANY
+    PURPOSE WITH OR WITHOUT FEE IS HEREBY GRANTED, PROVIDED THAT THE ABOVE
+    COPYRIGHT NOTICE AND THIS PERMISSION NOTICE APPEAR IN ALL COPIES.
+    THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+    WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+    MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+    ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+    WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+    ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+    OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
 """
 
 import pexpect, pxssh # See http://pexpect.sourceforge.net/
@@ -213,7 +227,7 @@ def main():
     # generate some stats for the ip addresses found.
     if average_n <= 1:
         average_n = None
-    s = stats(zip(*ip_list[0:average_n])[1]) # The * unary operator treats the list elements as arguments 
+    s = stats(zip(*ip_list[0:average_n])[1]) # The * unary operator treats the list elements as arguments
     s['maxip'] = ip_list[0]
 
     # print munin-style or verbose results for the stats.

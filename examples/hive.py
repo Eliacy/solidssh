@@ -58,24 +58,53 @@ on your machine can see this auth information. This is not secure.
 This is a crude script that begs to be multithreaded. But it serves its
 purpose.
 
-Noah Spurrier
+PEXPECT LICENSE
 
-$Id$
+    This license is approved by the OSI and FSF as GPL-compatible.
+        http://opensource.org/licenses/isc-license.txt
+
+    Copyright (c) 2012, Noah Spurrier <noah@noah.org>
+    PERMISSION TO USE, COPY, MODIFY, AND/OR DISTRIBUTE THIS SOFTWARE FOR ANY
+    PURPOSE WITH OR WITHOUT FEE IS HEREBY GRANTED, PROVIDED THAT THE ABOVE
+    COPYRIGHT NOTICE AND THIS PERMISSION NOTICE APPEAR IN ALL COPIES.
+    THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+    WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+    MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+    ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+    WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+    ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+    OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
 """
 
 # TODO add feature to support username:password@host combination
 # TODO add feature to log each host output in separate file
 
-import sys, os, re, optparse, traceback, types, time, getpass
-import pexpect, pxssh
-import readline, atexit
+import sys
+import os
+import re
+import optparse
+import traceback
+import types
+import time
+import getpass
+import readline
+import atexit
+try:
+    import pexpect
+    import pxssh
+except ImportError:
+    sys.stderr.write("You do not have 'pexpect' installed.\n")
+    sys.stderr.write("On Ubuntu you need the 'python-pexpect' package.\n")
+    sys.stderr.write("    aptitude -y install python-pexpect\n")
+    exit(1)
 
-#histfile = os.path.join(os.environ["HOME"], ".hive_history")
-#try:
-#    readline.read_history_file(histfile)
-#except IOError:
-#    pass
-#atexit.register(readline.write_history_file, histfile)
+histfile = os.path.join(os.environ["HOME"], ".hive_history")
+try:
+    readline.read_history_file(histfile)
+except IOError:
+    pass
+atexit.register(readline.write_history_file, histfile)
 
 CMD_HELP="""Hive commands are preceded by a colon : (just think of vi).
 
