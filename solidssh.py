@@ -10,6 +10,8 @@ import pexpect
 import time
 import sys
 
+SSH_PARAMS = "-N -g -C -D %s %s"     # local_port, host
+
 def ssh_tunnel(host, local_port, password=None):
     """自动管理 ssh 隧道的连接状态，断线时自动重连。
 
@@ -18,10 +20,12 @@ def ssh_tunnel(host, local_port, password=None):
     * local_port: ssh 隧道的本地端口
     * passowrd: ssh 服务器上的帐号，对应的用户名在 host 参数中指明
     """
+    fails = 0
     while True:
        try:
-           print "creating ssh tunnel"
-           child = pexpect.spawn("ssh -v -N -g -C -D %s %s" % (local_port, host), timeout=5)
+           print "== creating ssh tunnel =="
+           ssh_params = SSH_PARAMS if fails != 1 else "-v " + SSH_PARAMS
+           child = pexpect.spawn("ssh " + ssh_params % (local_port, host), timeout=5)
            child.logfile_read = sys.stdout
            if password != None:
                child.expect('password:')
@@ -30,6 +34,7 @@ def ssh_tunnel(host, local_port, password=None):
                time.sleep(0.5)
                print '\ntunnel ready'
            child.setecho(True)
+           fails = 0     # 登陆成功
            
            try:
                while True:
@@ -43,12 +48,17 @@ def ssh_tunnel(host, local_port, password=None):
                break
            
            child.close(force=True)
-           print "detect ssh tunnel dead"
+           print "## detect ssh tunnel dead ##"
 
        except Exception, e:
-           print str(e)
+           if fails <= 1:
+               print str(e)
+               print
+           fails += 1
+           if fails > 1:
+               time.sleep(3)
     
-    print "autossh.py exited"
+    print "## autossh.py exited ##"
 
 if __name__ == '__main__':
     if len(sys.argv) < 3:
@@ -57,7 +67,7 @@ if __name__ == '__main__':
     Example: autossh.py my_username@my_hostname:port 18080 my_password
          """
     else:
-        print "starting autossh.py"
+        print "== starting autossh.py =="
         argv = sys.argv[1:] + [None]
         host, local_port, password = argv[0:3]
         ssh_tunnel(host, local_port, password)
