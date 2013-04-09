@@ -8,16 +8,21 @@
 
 import pexpect
 import time
+import socket, SocketServer
 import sys
 import threading
 
+import socks
+
 SSH_PARAMS = "-N -C -D %s %s"     # local_port, host
-REVERSE_SSH_PARMAS = "-g -N -R %s:localhost:%s %s"       # remote_port, local_port, host
+REVERSE_SSH_PARMAS = "-g -N -R %s:127.0.0.1:%s %s"       # remote_port, local_port, host
 TUNNEL_START = threading.Event()
 TUNNEL_CREATED = threading.Event()
+TUNNEL_MONITORED = threading.Event()
 TUNNEL_DEAD = threading.Event()
 TUNNEL_EXIT = threading.Event()
-EVENTS = (TUNNEL_START, TUNNEL_CREATED, TUNNEL_DEAD, TUNNEL_EXIT)
+TUNNEL_ALIVE = threading.Event()
+EVENTS = (TUNNEL_START, TUNNEL_CREATED, TUNNEL_MONITORED, TUNNEL_DEAD, TUNNEL_EXIT, TUNNEL_ALIVE)
 
 def _connect_ssh(ssh_str, password=None):
     """调用 ssh 指令建立隧道的封装函数。
@@ -48,7 +53,7 @@ def ssh_tunnel(events, ssh_params_template, host, local_port, password=None):
     * local_port: ssh 隧道的本地端口
     * passowrd: ssh 服务器上的帐号，对应的用户名在 host 参数中指明
     """
-    tunnel_start, tunnel_created, tunnel_dead, tunnel_exit = events
+    tunnel_start, tunnel_created, tunnel_monitored, tunnel_dead, tunnel_exit, tunnel_alive = events
 
     fails = 0
     while True:
@@ -61,18 +66,16 @@ def ssh_tunnel(events, ssh_params_template, host, local_port, password=None):
             ssh_str = "ssh " + ssh_params % (local_port, host)
             child = _connect_ssh(ssh_str, password)
             fails = 0     # 登陆成功
-            time.sleep(0.5)
             tunnel_created.set()
-            print '\ntunnel ready'
+            print '\ntunnel ready\n',
             
             while True:
-                if tunnel_dead.isSet() or tunnel_exit.isSet():
-                    break
                 index = child.expect([pexpect.EOF, pexpect.TIMEOUT], timeout=1)        
                 if index == 1 and child.isalive():
-                    continue
+                    pass
                 else:
                     tunnel_dead.set()
+                if tunnel_dead.isSet() or tunnel_exit.isSet():
                     break
             
             child.close(force=True)
@@ -81,7 +84,7 @@ def ssh_tunnel(events, ssh_params_template, host, local_port, password=None):
         except Exception, e:
             tunnel_dead.set()
             if fails <= 1:
-                print str(e)
+                print 'tunnel:', str(e)
                 print
             fails += 1
             if fails > 1:
@@ -98,7 +101,7 @@ def monitor_tunnel(events, ssh_params_template, host, local_port, remote_port, p
     * remote_port: ssh 隧道的远程端口
     * passowrd: ssh 服务器上的帐号，对应的用户名在 host 参数中指明
     """
-    tunnel_start, tunnel_created, tunnel_dead, tunnel_exit = events
+    tunnel_start, tunnel_created, tunnel_monitored, tunnel_dead, tunnel_exit, tunnel_alive = events
 
     fails = 0
     while True:
@@ -111,16 +114,16 @@ def monitor_tunnel(events, ssh_params_template, host, local_port, remote_port, p
             ssh_str = "ssh " + ssh_params % (remote_port, local_port, host)
             child = _connect_ssh(ssh_str, password)
             fails = 0     # 登陆成功
+            tunnel_monitored.set()
             print '\nmonitor ready'
             
             while True:
-                if tunnel_dead.isSet() or tunnel_exit.isSet():
-                    break
                 index = child.expect([pexpect.EOF, pexpect.TIMEOUT], timeout=1)        
                 if index == 1 and child.isalive():
-                    continue
+                    pass
                 else:
                     tunnel_dead.set()
+                if tunnel_dead.isSet() or tunnel_exit.isSet():
                     break
             
             child.close(force=True)
@@ -130,11 +133,13 @@ def monitor_tunnel(events, ssh_params_template, host, local_port, remote_port, p
             if fails >= 2:      # 也即第三次重试，仍然连接失败：
                 tunnel_dead.set()
             if fails <= 1:
-                print str(e)
+                print 'monitor:', str(e)
                 print
             fails += 1
-            if fails > 1:
+            if fails > 1 and not tunnel_dead.isSet():
                 time.sleep(3)
+        if tunnel_dead.isSet():
+            time.sleep(3)
 
 def control_events(events):
     """管理事件状态变迁的线程。
@@ -142,7 +147,7 @@ def control_events(events):
     参数说明：
     * events: 全局事件容器
     """
-    tunnel_start, tunnel_created, tunnel_dead, tunnel_exit = events
+    tunnel_start, tunnel_created, tunnel_monitored, tunnel_dead, tunnel_exit, tunnel_alive = events
 
     while True:
         tunnel_created.wait()
@@ -150,6 +155,78 @@ def control_events(events):
 
         tunnel_dead.wait()
         tunnel_created.clear()
+        tunnel_monitored.clear()
+
+class MyTCPHandler(SocketServer.StreamRequestHandler):
+    """用于接收监控隧道心跳服务的处理器。
+    """
+
+    def handle(self):
+        """继承自 StreamRequestHandler 的网络请求处理函数。
+        """
+        try:
+            self.data = self.rfile.readline().strip()
+            if time.time() - float(self.data) <= 3.0:
+                self.server.event_alive.set()
+        except Exception, e:
+            print 'handler:', str(e)
+            pass
+
+def monitor_server(events, monitor_port):
+    """用于测试隧道状态的服务端。
+
+    参数说明：
+    * events: 全局事件容器
+    * monitor_port: 用于监听的端口
+    """
+    tunnel_start, tunnel_created, tunnel_monitored, tunnel_dead, tunnel_exit, tunnel_alive = events
+
+    server = SocketServer.ThreadingTCPServer(("127.0.0.1", monitor_port), MyTCPHandler)
+    server.event_alive = tunnel_alive
+    socket_server_thread = threading.Thread(target=server.serve_forever)
+    socket_server_thread.daemon = False
+    socket_server_thread.start()
+
+    tunnel_exit.wait()
+    server.shutdown()
+
+def monitor_client(events, proxy_port, remote_port):
+    """用于测试隧道状态的客户端。
+
+    参数说明：
+    * events: 全局事件容器
+    * proxy_port: 本地 socks 代理的端口
+    * remote_port: 隧道端用于监听的端口
+    """
+    tunnel_start, tunnel_created, tunnel_monitored, tunnel_dead, tunnel_exit, tunnel_alive = events
+
+    socks.setdefaultproxy(socks.PROXY_TYPE_SOCKS5, "127.0.0.1", proxy_port)
+    socket.socket = socks.socksocket
+
+    while True:
+        socket_failed = False
+        tunnel_monitored.wait()
+
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.connect(("127.0.0.1", remote_port))
+            sock.sendall(str(time.time()) + "\n")
+        except Exception, e:
+            print 'client:', str(e)
+            tunnel_dead.set()
+            socket_failed = True
+        finally:
+            sock.close()
+
+        if not socket_failed:
+            time.sleep(3)
+            if tunnel_alive.isSet():
+                tunnel_alive.clear()
+            else:
+                tunnel_dead.set()
+
+        if tunnel_dead.isSet():
+            time.sleep(3)
 
 def start_tunnel(events, host, local_port, password=None):
     """管理 ssh 隧道的主线程，负责隧道断线重连和状态监控。
@@ -160,8 +237,12 @@ def start_tunnel(events, host, local_port, password=None):
     * local_port: ssh 隧道的本地端口
     * passowrd: ssh 服务器上的帐号，对应的用户名在 host 参数中指明
     """
-    tunnel_start, tunnel_created, tunnel_dead, tunnel_exit = events
+    tunnel_start, tunnel_created, tunnel_monitored, tunnel_dead, tunnel_exit, tunnel_alive = events
     remote_port = str(int(local_port) + 1)
+
+    control_thread = threading.Thread(target = control_events, args = (events,))
+    control_thread.daemon = True
+    control_thread.start()
 
     tunnel_thread = threading.Thread(target = ssh_tunnel, args = (events, SSH_PARAMS, host, local_port, password))
     tunnel_thread.daemon = False
@@ -169,12 +250,16 @@ def start_tunnel(events, host, local_port, password=None):
     tunnel_start.set()
 
     monitor_thread = threading.Thread(target = monitor_tunnel, args = (events, REVERSE_SSH_PARMAS, host, remote_port, remote_port, password))
-    monitor_thread.daemon = True
+    monitor_thread.daemon = True        # 因为存在对事件的 wait() 死锁。
     monitor_thread.start()
 
-    control_thread = threading.Thread(target = control_events, args = (events,))
-    control_thread.daemon = True
-    control_thread.start()
+    server_thread = threading.Thread(target = monitor_server, args = (events, int(remote_port)))
+    server_thread.daemon = False
+    server_thread.start()
+
+    client_thread = threading.Thread(target = monitor_client, args = (events, int(local_port), int(remote_port)))
+    client_thread.daemon = True         # 因为存在对事件的 wait() 死锁。
+    client_thread.start()
 
     try:
         while True:

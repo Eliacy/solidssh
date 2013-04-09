@@ -138,7 +138,9 @@ class socksocket(socket.socket):
 		"""
 		data = ""
 		while len(data) < bytes:
-			data = data + self.recv(bytes-len(data))
+			got = self.recv(bytes-len(data))
+			data = data + got
+                        if len(got) <= 0: break
 		return data
 	
 	def setproxy(self,proxytype=None,addr=None,port=None,rdns=True,username=None,password=None):
