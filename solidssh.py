@@ -12,12 +12,31 @@ import sys
 import threading
 
 SSH_PARAMS = "-N -C -D %s %s"     # local_port, host
+REVERSE_SSH_PARMAS = "-g -N -R %s:localhost:%s %s"       # remote_port, local_port, host
 TUNNEL_START = threading.Event()
 TUNNEL_CREATED = threading.Event()
 TUNNEL_DEAD = threading.Event()
-MONITOR_EXIT = threading.Event()
 TUNNEL_EXIT = threading.Event()
-EVENTS = (TUNNEL_START, TUNNEL_CREATED, TUNNEL_DEAD, MONITOR_EXIT, TUNNEL_EXIT)
+EVENTS = (TUNNEL_START, TUNNEL_CREATED, TUNNEL_DEAD, TUNNEL_EXIT)
+
+def _connect_ssh(ssh_str, password=None):
+    """调用 ssh 指令建立隧道的封装函数。
+
+    参数说明：
+    * ssh_str: 拼接好的完整 ssh 指令（含配置参数）
+
+    返回值：
+    * child: pexpect.spawn 函数的对应返回值，也即启动的 ssh 进程的命令行界面操控句柄
+    """
+    child = pexpect.spawn(ssh_str, timeout=5)
+    child.logfile_read = sys.stdout
+    if password != None:
+        child.expect('password:')
+        time.sleep(0.5)
+        child.sendline(password)
+        time.sleep(0.5)
+    child.setecho(True)
+    return child
 
 def ssh_tunnel(events, ssh_params_template, host, local_port, password=None):
     """自动管理 ssh 隧道的连接状态，断线时自动重连。
@@ -29,37 +48,33 @@ def ssh_tunnel(events, ssh_params_template, host, local_port, password=None):
     * local_port: ssh 隧道的本地端口
     * passowrd: ssh 服务器上的帐号，对应的用户名在 host 参数中指明
     """
-    tunnel_start, tunnel_created, tunnel_dead, monitor_exit, tunnel_exit = events
+    tunnel_start, tunnel_created, tunnel_dead, tunnel_exit = events
+
     fails = 0
     while True:
         if tunnel_exit.isSet():
             break
         tunnel_start.wait()
-        tunnel_start.clear()
-        tunnel_dead.clear()
         try:
             print "== creating ssh tunnel =="
             ssh_params = ssh_params_template if fails != 1 else "-v " + ssh_params_template
-            child = pexpect.spawn("ssh " + ssh_params % (local_port, host), timeout=5)
-            child.logfile_read = sys.stdout
-            if password != None:
-                child.expect('password:')
-                time.sleep(0.5)
-                child.sendline(password)
-                time.sleep(0.5)
-                print '\ntunnel ready'
-            child.setecho(True)
+            ssh_str = "ssh " + ssh_params % (local_port, host)
+            child = _connect_ssh(ssh_str, password)
             fails = 0     # 登陆成功
+            time.sleep(0.5)
             tunnel_created.set()
+            print '\ntunnel ready'
             
             while True:
+                if tunnel_dead.isSet() or tunnel_exit.isSet():
+                    break
                 index = child.expect([pexpect.EOF, pexpect.TIMEOUT], timeout=1)        
-                if index == 1 and child.isalive() and not tunnel_dead.isSet():
+                if index == 1 and child.isalive():
                     continue
                 else:
+                    tunnel_dead.set()
                     break
             
-            tunnel_dead.set()
             child.close(force=True)
             print "## detect ssh tunnel dead ##"
 
@@ -72,27 +87,104 @@ def ssh_tunnel(events, ssh_params_template, host, local_port, password=None):
             if fails > 1:
                 time.sleep(3)
 
-def start_tunnel(events, ssh_params_template, host, local_port, password=None):
-    """管理 ssh 隧道的主线程，负责隧道断线重连和状态监控。
+def monitor_tunnel(events, ssh_params_template, host, local_port, remote_port, password=None):
+    """管理监控用 ssh 隧道的连接状态，断线时发出报警事件。
 
     参数说明：
     * events: 全局事件容器
     * ssh_params_template: ssh 连接参数模板
     * host: ssh 服务器连接地址，例如 username@hostname:port
     * local_port: ssh 隧道的本地端口
+    * remote_port: ssh 隧道的远程端口
     * passowrd: ssh 服务器上的帐号，对应的用户名在 host 参数中指明
     """
-    tunnel_start, tunnel_created, tunnel_dead, monitor_exit, tunnel_exit = events
-    tunnel_thread = threading.Thread(target = ssh_tunnel, args = (events, ssh_params_template, host, local_port, password))
+    tunnel_start, tunnel_created, tunnel_dead, tunnel_exit = events
+
+    fails = 0
+    while True:
+        if tunnel_exit.isSet():
+            break
+        tunnel_created.wait()
+        try:
+            print "== creating monitor tunnel =="
+            ssh_params = ssh_params_template if fails != 1 else "-v " + ssh_params_template
+            ssh_str = "ssh " + ssh_params % (remote_port, local_port, host)
+            child = _connect_ssh(ssh_str, password)
+            fails = 0     # 登陆成功
+            print '\nmonitor ready'
+            
+            while True:
+                if tunnel_dead.isSet() or tunnel_exit.isSet():
+                    break
+                index = child.expect([pexpect.EOF, pexpect.TIMEOUT], timeout=1)        
+                if index == 1 and child.isalive():
+                    continue
+                else:
+                    tunnel_dead.set()
+                    break
+            
+            child.close(force=True)
+            print "## detect monitor tunnel dead ##"
+
+        except Exception, e:
+            if fails >= 2:      # 也即第三次重试，仍然连接失败：
+                tunnel_dead.set()
+            if fails <= 1:
+                print str(e)
+                print
+            fails += 1
+            if fails > 1:
+                time.sleep(3)
+
+def control_events(events):
+    """管理事件状态变迁的线程。
+
+    参数说明：
+    * events: 全局事件容器
+    """
+    tunnel_start, tunnel_created, tunnel_dead, tunnel_exit = events
+
+    while True:
+        tunnel_created.wait()
+        tunnel_dead.clear()
+
+        tunnel_dead.wait()
+        tunnel_created.clear()
+
+def start_tunnel(events, host, local_port, password=None):
+    """管理 ssh 隧道的主线程，负责隧道断线重连和状态监控。
+
+    参数说明：
+    * events: 全局事件容器
+    * host: ssh 服务器连接地址，例如 username@hostname:port
+    * local_port: ssh 隧道的本地端口
+    * passowrd: ssh 服务器上的帐号，对应的用户名在 host 参数中指明
+    """
+    tunnel_start, tunnel_created, tunnel_dead, tunnel_exit = events
+    remote_port = str(int(local_port) + 1)
+
+    tunnel_thread = threading.Thread(target = ssh_tunnel, args = (events, SSH_PARAMS, host, local_port, password))
+    tunnel_thread.daemon = False
     tunnel_thread.start()
     tunnel_start.set()
+
+    monitor_thread = threading.Thread(target = monitor_tunnel, args = (events, REVERSE_SSH_PARMAS, host, remote_port, remote_port, password))
+    monitor_thread.daemon = True
+    monitor_thread.start()
+
+    control_thread = threading.Thread(target = control_events, args = (events,))
+    control_thread.daemon = True
+    control_thread.start()
+
     try:
         while True:
             time.sleep(3)
     except KeyboardInterrupt:
+        tunnel_exit.set()
         tunnel_start.clear()
         tunnel_dead.set()
-        tunnel_exit.set()
+        if tunnel_created.isSet():
+            monitor_thread.join()
         tunnel_thread.join()
         print "## solidssh exited ##"
 
@@ -106,5 +198,5 @@ if __name__ == '__main__':
         print "== starting solidssh.py =="
         argv = sys.argv[1:] + [None]
         host, local_port, password = argv[0:3]
-        start_tunnel(EVENTS, SSH_PARAMS, host, local_port, password)
+        start_tunnel(EVENTS, host, local_port, password)
 
