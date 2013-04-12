@@ -181,6 +181,7 @@ def monitor_server(events, monitor_port):
     """
     tunnel_start, tunnel_created, tunnel_monitored, tunnel_dead, tunnel_exit, tunnel_alive = events
 
+    SocketServer.ThreadingTCPServer.allow_reuse_address = True
     server = SocketServer.ThreadingTCPServer(("127.0.0.1", monitor_port), MyTCPHandler)
     server.event_alive = tunnel_alive
     socket_server_thread = threading.Thread(target=server.serve_forever)
