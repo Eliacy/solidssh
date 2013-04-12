@@ -1,17 +1,17 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""ssh 隧道的自动登陆程序。
-* 基于 pan.shizhu@gmail.com 的 Python 脚本略有修改。
+"""ssh 隧道的自动登陆程序，能自动建立额外的心跳信号隧道监控网络状态，适应系统休眠等更多网络场景。
+* 基于 pan.shizhu@gmail.com 的 Python 脚本修改。
 * 修改者： elias.soong@gmail.com
 """
 
-import pexpect
 import time
 import socket, SocketServer
 import sys
 import threading
 
+import pexpect
 import socks
 
 SSH_PARAMS = "-N -C -D %s %s"     # local_port, host
@@ -228,7 +228,7 @@ def monitor_client(events, proxy_port, remote_port):
         if tunnel_dead.isSet():
             time.sleep(3)
 
-def start_tunnel(events, host, local_port, password=None):
+def start_tunnel(events, host, local_port, password=None, monitor_flag=True):
     """管理 ssh 隧道的主线程，负责隧道断线重连和状态监控。
 
     参数说明：
@@ -236,6 +236,7 @@ def start_tunnel(events, host, local_port, password=None):
     * host: ssh 服务器连接地址，例如 username@hostname:port
     * local_port: ssh 隧道的本地端口
     * passowrd: ssh 服务器上的帐号，对应的用户名在 host 参数中指明
+    * monitor_flag: 是否监控隧道状态
     """
     tunnel_start, tunnel_created, tunnel_monitored, tunnel_dead, tunnel_exit, tunnel_alive = events
     remote_port = str(int(local_port) + 1)
@@ -249,17 +250,18 @@ def start_tunnel(events, host, local_port, password=None):
     tunnel_thread.start()
     tunnel_start.set()
 
-    monitor_thread = threading.Thread(target = monitor_tunnel, args = (events, REVERSE_SSH_PARMAS, host, remote_port, remote_port, password))
-    monitor_thread.daemon = True        # 因为存在对事件的 wait() 死锁。
-    monitor_thread.start()
+    if monitor_flag:
+        monitor_thread = threading.Thread(target = monitor_tunnel, args = (events, REVERSE_SSH_PARMAS, host, remote_port, remote_port, password))
+        monitor_thread.daemon = True        # 因为存在对事件的 wait() 死锁。
+        monitor_thread.start()
 
-    server_thread = threading.Thread(target = monitor_server, args = (events, int(remote_port)))
-    server_thread.daemon = False
-    server_thread.start()
+        server_thread = threading.Thread(target = monitor_server, args = (events, int(remote_port)))
+        server_thread.daemon = False
+        server_thread.start()
 
-    client_thread = threading.Thread(target = monitor_client, args = (events, int(local_port), int(remote_port)))
-    client_thread.daemon = True         # 因为存在对事件的 wait() 死锁。
-    client_thread.start()
+        client_thread = threading.Thread(target = monitor_client, args = (events, int(local_port), int(remote_port)))
+        client_thread.daemon = True         # 因为存在对事件的 wait() 死锁。
+        client_thread.start()
 
     try:
         while True:
@@ -268,7 +270,7 @@ def start_tunnel(events, host, local_port, password=None):
         tunnel_exit.set()
         tunnel_start.clear()
         tunnel_dead.set()
-        if tunnel_created.isSet():
+        if monitor_flag and tunnel_created.isSet():
             monitor_thread.join()
         tunnel_thread.join()
         print "## solidssh exited ##"
@@ -276,12 +278,18 @@ def start_tunnel(events, host, local_port, password=None):
 if __name__ == '__main__':
     if len(sys.argv) < 3:
         print """This script create an ssh tunnel and auto reconnect it when any error occur.
-    Usage: solidssh.py %HOST% %LOCAL_PORT% [%PASSWORD%]
-    Example: solidssh.py my_username@my_hostname:port 18080 my_password
+    Usage: solidssh.py %HOST% %LOCAL_PORT% [%PASSWORD%] [nomonitor]
+    Example: solidssh.py my_username@my_hostname:port 18080 my_password nomonitor
          """
     else:
         print "== starting solidssh.py =="
-        argv = sys.argv[1:] + [None]
+        argv = sys.argv[1:]
+        if argv[-1] == 'nomonitor':
+            monitor_flag = False
+            argv.pop(-1)
+        else:
+            monitor_flag = True
+        argv = argv + [None]
         host, local_port, password = argv[0:3]
-        start_tunnel(EVENTS, host, local_port, password)
+        start_tunnel(EVENTS, host, local_port, password, monitor_flag)
 
