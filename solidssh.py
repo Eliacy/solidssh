@@ -68,7 +68,6 @@ def ssh_tunnel(events, ssh_params_template, host, local_port, password=None):
             fails = 0     # 登陆成功
             tunnel_created.set()
             print '\ntunnel ready\n',
-            
             while True:
                 index = child.expect([pexpect.EOF, pexpect.TIMEOUT], timeout=1)        
                 if index == 1 and child.isalive():
@@ -77,10 +76,7 @@ def ssh_tunnel(events, ssh_params_template, host, local_port, password=None):
                     tunnel_dead.set()
                 if tunnel_dead.isSet() or tunnel_exit.isSet():
                     break
-            
-            child.close(force=True)
             print "## detect ssh tunnel dead ##"
-
         except Exception, e:
             tunnel_dead.set()
             if fails <= 1:
@@ -89,6 +85,8 @@ def ssh_tunnel(events, ssh_params_template, host, local_port, password=None):
             fails += 1
             if fails > 1:
                 time.sleep(3)
+        finally:
+            child.close(force=True)
 
 def monitor_tunnel(events, ssh_params_template, host, local_port, remote_port, password=None):
     """管理监控用 ssh 隧道的连接状态，断线时发出报警事件。
@@ -116,7 +114,6 @@ def monitor_tunnel(events, ssh_params_template, host, local_port, remote_port, p
             fails = 0     # 登陆成功
             tunnel_monitored.set()
             print '\nmonitor ready'
-            
             while True:
                 index = child.expect([pexpect.EOF, pexpect.TIMEOUT], timeout=1)        
                 if index == 1 and child.isalive():
@@ -125,10 +122,7 @@ def monitor_tunnel(events, ssh_params_template, host, local_port, remote_port, p
                     tunnel_dead.set()
                 if tunnel_dead.isSet() or tunnel_exit.isSet():
                     break
-            
-            child.close(force=True)
             print "## detect monitor tunnel dead ##"
-
         except Exception, e:
             if fails >= 2:      # 也即第三次重试，仍然连接失败：
                 tunnel_dead.set()
@@ -138,6 +132,8 @@ def monitor_tunnel(events, ssh_params_template, host, local_port, remote_port, p
             fails += 1
             if fails > 1 and not tunnel_dead.isSet():
                 time.sleep(3)
+        finally:
+            child.close(force=True)
         if tunnel_dead.isSet():
             time.sleep(3)
 
@@ -210,6 +206,7 @@ def monitor_client(events, proxy_port, remote_port):
 
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(3.0)
             sock.connect(("127.0.0.1", remote_port))
             sock.sendall(str(time.time()) + "\n")
         except Exception, e:
