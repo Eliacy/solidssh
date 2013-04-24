@@ -33,10 +33,10 @@ def _connect_ssh(ssh_str, password=None):
     返回值：
     * child: pexpect.spawn 函数的对应返回值，也即启动的 ssh 进程的命令行界面操控句柄
     """
-    child = pexpect.spawn(ssh_str, timeout=5)
+    child = pexpect.spawn(ssh_str, timeout=3)
     child.logfile_read = sys.stdout
     if password != None:
-        child.expect('password:')
+        child.expect('password:', timeout=8)
         time.sleep(0.5)
         child.sendline(password)
         time.sleep(0.5)
@@ -56,6 +56,7 @@ def ssh_tunnel(events, ssh_params_template, host, local_port, password=None):
     tunnel_start, tunnel_created, tunnel_monitored, tunnel_dead, tunnel_exit, tunnel_alive = events
 
     fails = 0
+    child = None
     while True:
         if tunnel_exit.isSet():
             break
@@ -86,7 +87,10 @@ def ssh_tunnel(events, ssh_params_template, host, local_port, password=None):
             if fails > 1:
                 time.sleep(3)
         finally:
-            child.close(force=True)
+            if child != None:
+                while child.isalive():  # 确保 ssh 进程确实退出了，测试发现有小概率仅通过 close() 函数无法正常关闭。
+                    child.close(force=True)
+                    time.sleep(1)
 
 def monitor_tunnel(events, ssh_params_template, host, local_port, remote_port, password=None):
     """管理监控用 ssh 隧道的连接状态，断线时发出报警事件。
@@ -102,6 +106,7 @@ def monitor_tunnel(events, ssh_params_template, host, local_port, remote_port, p
     tunnel_start, tunnel_created, tunnel_monitored, tunnel_dead, tunnel_exit, tunnel_alive = events
 
     fails = 0
+    child = None
     while True:
         if tunnel_exit.isSet():
             break
@@ -133,7 +138,10 @@ def monitor_tunnel(events, ssh_params_template, host, local_port, remote_port, p
             if fails > 1 and not tunnel_dead.isSet():
                 time.sleep(3)
         finally:
-            child.close(force=True)
+            if child != None:
+                while child.isalive():  # 确保 ssh 进程确实退出了，测试发现有小概率仅通过 close() 函数无法正常关闭。
+                    child.close(force=True)
+                    time.sleep(1)
         if tunnel_dead.isSet():
             time.sleep(3)
 
@@ -206,7 +214,7 @@ def monitor_client(events, proxy_port, remote_port):
 
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(3.0)
+            sock.settimeout(1.0)
             sock.connect(("127.0.0.1", remote_port))
             sock.sendall(str(time.time()) + "\n")
         except Exception, e:
