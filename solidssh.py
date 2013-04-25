@@ -170,7 +170,7 @@ class MyTCPHandler(SocketServer.StreamRequestHandler):
         """
         try:
             self.data = self.rfile.readline().strip()
-            if time.time() - float(self.data) <= 3.0:
+            if time.time() - float(self.data) <= 60:
                 self.server.event_alive.set()
         except Exception, e:
             print 'handler:', str(e)
@@ -196,7 +196,7 @@ def monitor_server(events, monitor_port):
     server.shutdown()
 
 def monitor_client(events, proxy_port, remote_port):
-    """用于测试隧道状态的客户端，在隧道就位的状态下，每2秒发出一个心跳请求。
+    """用于测试隧道状态的客户端，在隧道就位的状态下，每3秒发出一个心跳请求（但容忍更长网络超时）。
 
     参数说明：
     * events: 全局事件容器
@@ -217,26 +217,26 @@ def monitor_client(events, proxy_port, remote_port):
             try:
                 sent_time = time.time()
                 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.settimeout(2.0)
+                sock.settimeout(30.0)
                 sock.connect(("127.0.0.1", remote_port))
                 sock.sendall(str(time.time()) + "\n")
             except Exception, e:
                 print 'client:', str(e)
             finally:
                 sock.close()
-            time_diff = 2 + sent_time - time.time()
+            time_diff = 3 + sent_time - time.time()
             time.sleep(time_diff if time_diff > 0 else 0)
 
             if tunnel_alive.isSet():
                 tunnel_alive.clear()
                 previous_success = time.time()
-            if time.time() - previous_success > 6:
+            if time.time() - previous_success > 65:
                 tunnel_dead.set()
             if tunnel_dead.isSet():
                 previous_success = None
-                time.sleep(6)
+                time.sleep(3)
         else:
-            time.sleep(2)
+            time.sleep(3)
 
 def start_tunnel(events, host, local_port, password=None, monitor_flag=True):
     """管理 ssh 隧道的主线程，负责隧道断线重连和状态监控。
