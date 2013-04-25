@@ -196,7 +196,7 @@ def monitor_server(events, monitor_port):
     server.shutdown()
 
 def monitor_client(events, proxy_port, remote_port):
-    """用于测试隧道状态的客户端。
+    """用于测试隧道状态的客户端，在隧道就位的状态下，每2秒发出一个心跳请求。
 
     参数说明：
     * events: 全局事件容器
@@ -208,31 +208,35 @@ def monitor_client(events, proxy_port, remote_port):
     socks.setdefaultproxy(socks.PROXY_TYPE_SOCKS5, "127.0.0.1", proxy_port)
     socket.socket = socks.socksocket
 
+    previous_success = None
     while True:
-        socket_failed = False
-        tunnel_monitored.wait()
+        if tunnel_monitored.isSet():
+            if previous_success == None:
+                previous_success = time.time()
 
-        try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(1.0)
-            sock.connect(("127.0.0.1", remote_port))
-            sock.sendall(str(time.time()) + "\n")
-        except Exception, e:
-            print 'client:', str(e)
-            tunnel_dead.set()
-            socket_failed = True
-        finally:
-            sock.close()
+            try:
+                sent_time = time.time()
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(2.0)
+                sock.connect(("127.0.0.1", remote_port))
+                sock.sendall(str(time.time()) + "\n")
+            except Exception, e:
+                print 'client:', str(e)
+            finally:
+                sock.close()
+            time_diff = 2 + sent_time - time.time()
+            time.sleep(time_diff if time_diff > 0 else 0)
 
-        if not socket_failed:
-            time.sleep(3)
             if tunnel_alive.isSet():
                 tunnel_alive.clear()
-            else:
+                previous_success = time.time()
+            if time.time() - previous_success > 6:
                 tunnel_dead.set()
-
-        if tunnel_dead.isSet():
-            time.sleep(3)
+            if tunnel_dead.isSet():
+                previous_success = None
+                time.sleep(6)
+        else:
+            time.sleep(2)
 
 def start_tunnel(events, host, local_port, password=None, monitor_flag=True):
     """管理 ssh 隧道的主线程，负责隧道断线重连和状态监控。
@@ -266,7 +270,7 @@ def start_tunnel(events, host, local_port, password=None, monitor_flag=True):
         server_thread.start()
 
         client_thread = threading.Thread(target = monitor_client, args = (events, int(local_port), int(remote_port)))
-        client_thread.daemon = True         # 因为存在对事件的 wait() 死锁。
+        client_thread.daemon = True         # 没有需要特别进行释放的资源。
         client_thread.start()
 
     try:
