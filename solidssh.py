@@ -6,10 +6,11 @@
 * 修改者： elias.soong@gmail.com
 """
 
-import time
+import re
 import socket, SocketServer
 import sys
 import threading
+import time
 
 import pexpect
 import socks
@@ -104,9 +105,11 @@ def monitor_tunnel(events, ssh_params_template, host, local_port, remote_port, p
     * passowrd: ssh 服务器上的帐号，对应的用户名在 host 参数中指明
     """
     tunnel_start, tunnel_created, tunnel_monitored, tunnel_dead, tunnel_exit, tunnel_alive = events
+    forward_warning_pattern = re.compile(r'Warning: remote port forwarding failed for listen port (\d+)')
 
     fails = 0
     child = None
+    warning_port = None
     while True:
         if tunnel_exit.isSet():
             break
@@ -114,14 +117,18 @@ def monitor_tunnel(events, ssh_params_template, host, local_port, remote_port, p
         try:
             print "== creating monitor tunnel =="
             ssh_params = ssh_params_template if fails != 1 else "-v " + ssh_params_template
-            ssh_str = "ssh " + ssh_params % (remote_port, local_port, host)
+            r_port = remote_port if warning_port == None else str(warning_port + 1)
+            ssh_str = "ssh " + ssh_params % (r_port, local_port, host)
             child = _connect_ssh(ssh_str, password)
             fails = 0     # 登陆成功
             tunnel_monitored.set()
             print '\nmonitor ready'
+            warning_port = None
             while True:
-                index = child.expect([pexpect.EOF, pexpect.TIMEOUT], timeout=1)        
-                if index == 1 and child.isalive():
+                index = child.expect([pexpect.EOF, pexpect.TIMEOUT, forward_warning_pattern], timeout=1)        
+                if index == 2:
+                    warning_port = int(child.match.group(1))
+                elif index == 1 and child.isalive():
                     pass
                 else:
                     tunnel_dead.set()
